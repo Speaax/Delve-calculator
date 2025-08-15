@@ -160,7 +160,7 @@ public class DelveCalculatorPlugin extends Plugin
 							try
 							{
 								int level = Integer.parseInt(levelText);
-								if (level >= 2 && level <= 8)
+								if (level >= 1 && level <= 8)
 								{
 									log.info("Delve completed! Level: {}", level);
 									panel.incrementFloorKills(level);
