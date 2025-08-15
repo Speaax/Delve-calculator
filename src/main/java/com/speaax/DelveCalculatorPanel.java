@@ -19,7 +19,9 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class DelveCalculatorPanel extends PluginPanel
 {
 	private final DelveCalculatorPlugin plugin;
@@ -353,12 +355,11 @@ public class DelveCalculatorPanel extends PluginPanel
 			}
 			
 			// Debug logging
-			System.out.println("Delve tracker data saved successfully to: " + dataFilePath);
+			log.info("Delve tracker data saved successfully to: {}", dataFilePath);
 		}
 		catch (Exception e)
 		{
-			System.err.println("Failed to save delve tracker data: " + e.getMessage());
-			e.printStackTrace();
+			log.error("Failed to save delve tracker data: {}", e.getMessage(), e);
 		}
 	}
 	
@@ -467,13 +468,13 @@ public class DelveCalculatorPanel extends PluginPanel
 	
 	public void updateData(Map<Integer, Integer> levelKills, int wavesPast8)
 	{
-		System.out.println("Panel.updateData called with levelKills: " + levelKills + ", wavesPast8: " + wavesPast8);
+		log.info("Panel.updateData called with levelKills: {}, wavesPast8: {}", levelKills, wavesPast8);
 		
 		this.currentLevelKills = levelKills;
 		this.currentWavesPast8 = wavesPast8;
 		
 		// Save data when widget data is updated
-		System.out.println("Calling saveData() to save to properties file...");
+		log.info("Calling saveData() to save to properties file...");
 		saveData();
 		
 		// Update the total kills label
@@ -493,7 +494,7 @@ public class DelveCalculatorPanel extends PluginPanel
 		revalidate();
 		repaint();
 		
-		System.out.println("Panel.updateData completed successfully");
+		log.info("Panel.updateData completed successfully");
 	}
 	
 	private void updateNoDataSectionVisibility()
