@@ -156,7 +156,7 @@ public class DelveCalculatorPlugin extends Plugin
 						}
 						else
 						{
-							// Regular level (2-8)
+							// Regular level (1-8)
 							try
 							{
 								int level = Integer.parseInt(levelText);
