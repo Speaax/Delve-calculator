@@ -1,5 +1,6 @@
 package com.speaax;
 
+import com.google.gson.Gson;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -7,6 +8,7 @@ import net.runelite.api.Client;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
@@ -14,13 +16,13 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.config.ConfigManager;
+import com.google.inject.Provides;
 
 import javax.inject.Inject;
 import java.awt.image.BufferedImage;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
 
 @Slf4j
 @PluginDescriptor(
@@ -32,6 +34,15 @@ public class DelveCalculatorPlugin extends Plugin
 {
 	@Inject
 	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
+
+	@Inject
+	private DelveCalculatorConfig config;
+
+	@Inject
+	private Gson gson;
 
 	@Inject
 	private ClientToolbar clientToolbar;
@@ -91,12 +102,17 @@ public class DelveCalculatorPlugin extends Plugin
 		));
 	}
 
+	@Provides
+	DelveCalculatorConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(DelveCalculatorConfig.class);
+	}
+
 	@Override
 	protected void startUp() throws Exception
 	{
-		panel = new DelveCalculatorPanel(this);
-		
-		// Load icon with error handling
+		panel = new DelveCalculatorPanel(this, config, gson);
+
 		BufferedImage icon = null;
 		try
 		{
@@ -187,18 +203,8 @@ public class DelveCalculatorPlugin extends Plugin
 	{
 		if (event.getGroupId() == WIDGET_GROUP)
 		{
-			log.info("Widget {} loaded, scheduling delayed data read", WIDGET_GROUP);
-			
-			// Widget loaded, but data might not be populated yet
-			// Schedule a delayed read to allow the widget data to populate
-			Timer timer = new Timer();
-			timer.schedule(new TimerTask() {
-				@Override
-				public void run() {
-					log.info("Executing delayed updateKillCounts for widget {}", WIDGET_GROUP);
-					updateKillCounts();
-				}
-			}, 500); // Wait 500ms for widget data to populate
+			// Use ClientThread instead of Timer for safer execution
+			clientThread.invokeLater(this::updateKillCounts);
 		}
 	}
 
