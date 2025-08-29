@@ -122,7 +122,7 @@ public class DelveCalculatorPanel extends PluginPanel
 		}
 		catch (Exception e)
 		{
-			log.error("Error loading Delve Calculator data", e);
+			log.debug("Error loading Delve Calculator data", e);
 		}
 	}
 

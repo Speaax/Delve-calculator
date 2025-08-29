@@ -120,7 +120,7 @@ public class DelveCalculatorPlugin extends Plugin
 		}
 		catch (Exception e)
 		{
-			log.warn("Failed to load plugin icon", e);
+			log.debug("Failed to load plugin icon", e);
 		}
 		
 		navButton = NavigationButton.builder()
@@ -166,7 +166,7 @@ public class DelveCalculatorPlugin extends Plugin
 						// Check if it's level 8+ (special case)
 						if (levelText.equals("8+"))
 						{
-							log.info("Delve completed! Level: 8+");
+							log.debug("Delve completed! Level: 8+");
 							panel.incrementWavesPast8();
 							break;
 						}
@@ -178,18 +178,18 @@ public class DelveCalculatorPlugin extends Plugin
 								int level = Integer.parseInt(levelText);
 								if (level >= 1 && level <= 8)
 								{
-									log.info("Delve completed! Level: {}", level);
+									log.debug("Delve completed! Level: {}", level);
 									panel.incrementFloorKills(level);
 									break;
 								}
 								else
 								{
-									log.warn("Invalid delve level: {}", level);
+									log.debug("Invalid delve level: {}", level);
 								}
 							}
 							catch (NumberFormatException e)
 							{
-								log.warn("Failed to parse delve level from message: {}", message);
+								log.debug("Failed to parse delve level from message: {}", message);
 							}
 						}
 					}
@@ -219,7 +219,7 @@ public class DelveCalculatorPlugin extends Plugin
 		Map<Integer, Integer> levelKills = new HashMap<>();
 		int wavesPast8 = 0;
 
-		log.info("Starting updateKillCounts - reading from widget group {}", WIDGET_GROUP);
+		log.debug("Starting updateKillCounts - reading from widget group {}", WIDGET_GROUP);
 
 		// Simple approach: read from child ID 46 to 70 with 3 increments
 		// This covers Level 1 (46) through Level 8+ (70)
@@ -227,8 +227,8 @@ public class DelveCalculatorPlugin extends Plugin
 		{
 			int childId = 46 + (i * 3);
 			Widget widget = client.getWidget(WIDGET_GROUP, childId);
-			
-			log.info("Reading widget {} for level {}: {}", childId, i + 1, widget != null ? widget.getText() : "null");
+
+			log.debug("Reading widget {} for level {}: {}", childId, i + 1, widget != null ? widget.getText() : "null");
 			
 			if (widget != null && widget.getText() != null && !widget.getText().isEmpty())
 			{
@@ -245,13 +245,13 @@ public class DelveCalculatorPlugin extends Plugin
 						{
 							// This is Level 8+
 							wavesPast8 = kills;
-							log.info("Level 8+ (waves past 8): {}", kills);
+							log.debug("Level 8+ (waves past 8): {}", kills);
 						}
 						else
 						{
 							// This is a regular level (1-8)
 							levelKills.put(i + 1, kills);
-							log.info("Level {}: {}", i + 1, kills);
+							log.debug("Level {}: {}", i + 1, kills);
 						}
 					}
 					else
@@ -260,12 +260,12 @@ public class DelveCalculatorPlugin extends Plugin
 						if (i == 8)
 						{
 							wavesPast8 = 0;
-							log.info("Level 8+ (waves past 8): 0 (no numeric data)");
+							log.debug("Level 8+ (waves past 8): 0 (no numeric data)");
 						}
 						else
 						{
 							levelKills.put(i + 1, 0);
-							log.info("Level {}: 0 (no numeric data)", i + 1);
+							log.debug("Level {}: 0 (no numeric data)", i + 1);
 						}
 					}
 				}
@@ -274,12 +274,12 @@ public class DelveCalculatorPlugin extends Plugin
 					if (i == 8)
 					{
 						wavesPast8 = 0;
-						log.info("Level 8+ (waves past 8): 0 (parse error)");
+						log.debug("Level 8+ (waves past 8): 0 (parse error)");
 					}
 					else
 					{
 						levelKills.put(i + 1, 0);
-						log.info("Level {}: 0 (parse error)", i + 1);
+						log.debug("Level {}: 0 (parse error)", i + 1);
 					}
 				}
 			}
@@ -288,28 +288,28 @@ public class DelveCalculatorPlugin extends Plugin
 				if (i == 8)
 				{
 					wavesPast8 = 0;
-					log.info("Level 8+ (waves past 8): 0 (widget null/empty)");
+					log.debug("Level 8+ (waves past 8): 0 (widget null/empty)");
 				}
 				else
 				{
 					levelKills.put(i + 1, 0);
-					log.info("Level {}: 0 (widget null/empty)", i + 1);
+					log.debug("Level {}: 0 (widget null/empty)", i + 1);
 				}
 			}
 		}
 
-		log.info("Final levelKills map: {}", levelKills);
-		log.info("Final wavesPast8: {}", wavesPast8);
+		log.debug("Final levelKills map: {}", levelKills);
+		log.debug("Final wavesPast8: {}", wavesPast8);
 
 		// Update the panel with new data
 		if (panel != null)
 		{
-			log.info("Calling panel.updateData with {} levels and {} waves past 8", levelKills.size(), wavesPast8);
+			log.debug("Calling panel.updateData with {} levels and {} waves past 8", levelKills.size(), wavesPast8);
 			panel.updateData(levelKills, wavesPast8);
 		}
 		else
 		{
-			log.warn("Panel is null, cannot update data");
+			log.debug("Panel is null, cannot update data");
 		}
 	}
 
