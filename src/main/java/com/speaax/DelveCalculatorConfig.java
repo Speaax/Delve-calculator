@@ -56,7 +56,7 @@ public interface DelveCalculatorConfig extends Config
     )
     default boolean autoOpenInRegion()
     {
-        return true;
+        return false;
     }
 
     @ConfigItem(
