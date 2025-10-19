@@ -8,10 +8,12 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.util.ImageUtil;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -27,6 +29,7 @@ public class DelveCalculatorPanel extends PluginPanel
 	private final JPanel noDataSectionPanel;
 
 	private final Map<Integer, JLabel> levelValueLabels = new HashMap<>();
+	private final Map<String, JPanel> itemPanels = new HashMap<>(); // To store and manage each reward panel
 
 	private Map<Integer, Integer> currentLevelKills = new HashMap<>();
 	private int currentWavesPast8 = 0;
@@ -104,10 +107,7 @@ public class DelveCalculatorPanel extends PluginPanel
 	private void loadData()
 	{
 		String json = config.killCountData();
-		if (json == null || json.isEmpty())
-		{
-			return;
-		}
+		if (json == null || json.isEmpty()) return;
 
 		try
 		{
@@ -120,10 +120,7 @@ public class DelveCalculatorPanel extends PluginPanel
 				this.currentWavesPast8 = data.getWavesPast8();
 			}
 		}
-		catch (Exception e)
-		{
-			log.debug("Error loading Delve Calculator data", e);
-		}
+		catch (Exception e) { log.debug("Error loading Delve Calculator data", e); }
 	}
 
 	private void saveData()
@@ -161,7 +158,7 @@ public class DelveCalculatorPanel extends PluginPanel
 		SwingUtilities.invokeLater(this::updateAllUI);
 	}
 
-	private void updateAllUI()
+	public void updateAllUI()
 	{
 		int totalKills = currentLevelKills.values().stream().mapToInt(Integer::intValue).sum() + currentWavesPast8;
 		totalKillsLabel.setText(String.valueOf(totalKills));
@@ -192,11 +189,12 @@ public class DelveCalculatorPanel extends PluginPanel
 		panel.add(headerLabel);
 		panel.add(Box.createVerticalStrut(5));
 
-		addAnyItemProgressBar(panel);
-		addProgressBar(panel, "Mokhaiotl Cloth", ItemID.MOKHAIOTL_CLOTH);
-		addProgressBar(panel, "Eye of Ayak", ItemID.EYE_OF_AYAK);
-		addProgressBar(panel, "Avernic Treads", ItemID.AVERNIC_TREADS);
-		addProgressBar(panel, "Dom", ItemID.DOMPET);
+		// Create and store each panel
+		itemPanels.put("Any Item", addAnyItemProgressBar(panel));
+		itemPanels.put("Mokhaiotl Cloth", addProgressBar(panel, "Mokhaiotl Cloth", ItemID.MOKHAIOTL_CLOTH));
+		itemPanels.put("Eye of Ayak", addProgressBar(panel, "Eye of Ayak", ItemID.EYE_OF_AYAK));
+		itemPanels.put("Avernic Treads", addProgressBar(panel, "Avernic Treads", ItemID.AVERNIC_TREADS));
+		itemPanels.put("Dom", addProgressBar(panel, "Dom", ItemID.DOMPET));
 
 		return panel;
 	}
@@ -218,18 +216,22 @@ public class DelveCalculatorPanel extends PluginPanel
 
 		return levelPanel;
 	}
-	private void addProgressBar(JPanel parent, String itemName, int itemId)
+	private JPanel addProgressBar(JPanel parent, String itemName, int itemId)
 	{
 		JPanel itemPanel = new JPanel(new BorderLayout(5, 0));
 		itemPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		itemPanel.setBorder(new EmptyBorder(2, 0, 2, 0));
 
-		JLabel iconLabel = new JLabel(new ImageIcon(itemManager.getImage(itemId)));
+		ImageIcon icon = new ImageIcon(itemManager.getImage(itemId));
+		JLabel iconLabel = new JLabel(icon);
 		iconLabel.setPreferredSize(new Dimension(32, 32));
 
 		JProgressBar progressBar = createProgressBar();
 		JLabel expectedLabel = createExpectedLabel();
 
+		// Store components for easy access
+		itemPanel.putClientProperty("originalIcon", icon);
+		itemPanel.putClientProperty("iconLabel", iconLabel);
 		itemPanel.putClientProperty("progressBar", progressBar);
 		itemPanel.putClientProperty("expectedLabel", expectedLabel);
 		itemPanel.putClientProperty("itemName", itemName);
@@ -239,8 +241,9 @@ public class DelveCalculatorPanel extends PluginPanel
 		itemPanel.add(expectedLabel, BorderLayout.EAST);
 
 		parent.add(itemPanel);
+		return itemPanel;
 	}
-	private void addAnyItemProgressBar(JPanel parent)
+	private JPanel addAnyItemProgressBar(JPanel parent)
 	{
 		JPanel anyItemPanel = new JPanel(new BorderLayout(5, 0));
 		anyItemPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -266,6 +269,7 @@ public class DelveCalculatorPanel extends PluginPanel
 		anyItemPanel.add(expectedLabel, BorderLayout.EAST);
 
 		parent.add(anyItemPanel);
+		return anyItemPanel;
 	}
 	private JProgressBar createProgressBar()
 	{
@@ -289,33 +293,77 @@ public class DelveCalculatorPanel extends PluginPanel
 	private void updateProgressBars()
 	{
 		Map<String, Double> itemProgress = calculateItemProgress();
+		Map<String, DelveCalculatorConfig.RewardDisplayMode> displayModes = getDisplayModes();
 
-		for (Component comp : progressPanel.getComponents())
+		for (Map.Entry<String, JPanel> entry : itemPanels.entrySet())
 		{
-			if (comp instanceof JPanel)
+			String itemName = entry.getKey();
+			JPanel itemPanel = entry.getValue();
+			DelveCalculatorConfig.RewardDisplayMode mode = displayModes.getOrDefault(itemName, DelveCalculatorConfig.RewardDisplayMode.SHOW);
+
+			// Handle visibility
+			if (mode == DelveCalculatorConfig.RewardDisplayMode.HIDE)
 			{
-				JPanel itemPanel = (JPanel) comp;
-				String itemName = (String) itemPanel.getClientProperty("itemName");
-				JProgressBar progressBar = (JProgressBar) itemPanel.getClientProperty("progressBar");
-				JLabel expectedLabel = (JLabel) itemPanel.getClientProperty("expectedLabel");
+				itemPanel.setVisible(false);
+				continue;
+			}
+			itemPanel.setVisible(true);
 
-				if (itemName != null && progressBar != null && expectedLabel != null)
+			// Get components
+			JProgressBar progressBar = (JProgressBar) itemPanel.getClientProperty("progressBar");
+			JLabel expectedLabel = (JLabel) itemPanel.getClientProperty("expectedLabel");
+			JLabel iconLabel = (JLabel) itemPanel.getClientProperty("iconLabel");
+
+			// Update progress values
+			double progress = itemProgress.getOrDefault(itemName, 0.0);
+			double expectedItems = Math.floor(progress);
+			double progressTowardsNextItem = (progress - expectedItems) * 100;
+			int barValue = (int) progressTowardsNextItem;
+
+			expectedLabel.setText(String.valueOf((int)expectedItems));
+			progressBar.setValue(barValue);
+			progressBar.setString(String.format("%.1f%%", progressTowardsNextItem));
+
+			// Handle display mode styling
+			if (mode == DelveCalculatorConfig.RewardDisplayMode.GREY)
+			{
+				progressBar.setForeground(Color.GRAY);
+				expectedLabel.setForeground(Color.GRAY);
+				if (iconLabel != null) // "Any" panel has no iconLabel property with an image
 				{
-					double progress = itemProgress.getOrDefault(itemName, 0.0);
-
-					double expectedItems = Math.floor(progress);
-					expectedLabel.setText(String.valueOf((int)expectedItems));
-
-					double progressTowardsNextItem = (progress - expectedItems) * 100;
-					int barValue = (int) progressTowardsNextItem;
-
-					progressBar.setValue(barValue);
-					progressBar.setString(String.format("%.1f%%", progressTowardsNextItem));
-					progressBar.setForeground(calculateProgressColor(barValue));
+					ImageIcon originalIcon = (ImageIcon) itemPanel.getClientProperty("originalIcon");
+					if (originalIcon != null)
+					{
+						// Create and set a greyscale version of the icon
+						BufferedImage greyImage = ImageUtil.grayscaleImage(ImageUtil.bufferedImageFromImage(originalIcon.getImage()));
+						iconLabel.setIcon(new ImageIcon(greyImage));
+					}
+				}
+			}
+			else // SHOW mode
+			{
+				progressBar.setForeground(calculateProgressColor(barValue));
+				expectedLabel.setForeground(Color.WHITE);
+				if (iconLabel != null)
+				{
+					// Restore the original colored icon
+					iconLabel.setIcon((ImageIcon) itemPanel.getClientProperty("originalIcon"));
 				}
 			}
 		}
 	}
+
+	private Map<String, DelveCalculatorConfig.RewardDisplayMode> getDisplayModes()
+	{
+		Map<String, DelveCalculatorConfig.RewardDisplayMode> modes = new HashMap<>();
+		modes.put("Any Item", DelveCalculatorConfig.RewardDisplayMode.SHOW);
+		modes.put("Mokhaiotl Cloth", config.mokhaiotlClothDisplay());
+		modes.put("Eye of Ayak", config.eyeOfAyakDisplay());
+		modes.put("Avernic Treads", config.avernicTreadsDisplay());
+		modes.put("Dom", config.domDisplay());
+		return modes;
+	}
+
 	private Map<String, Double> calculateItemProgress()
 	{
 		Map<String, Double> progress = new HashMap<>();
@@ -340,20 +388,23 @@ public class DelveCalculatorPanel extends PluginPanel
 		progress.put("Eye of Ayak", eyeOfAyakProgress);
 		progress.put("Avernic Treads", avernicTreadsProgress);
 		progress.put("Dom", domProgress);
-		progress.put("Any Item", mokhaiotlClothProgress + eyeOfAyakProgress + avernicTreadsProgress + domProgress);
+
+		// Calculate "Any Item" progress based on which items are set to SHOW
+		double anyItemProgress = 0;
+		if (config.mokhaiotlClothDisplay() == DelveCalculatorConfig.RewardDisplayMode.SHOW) anyItemProgress += mokhaiotlClothProgress;
+		if (config.eyeOfAyakDisplay() == DelveCalculatorConfig.RewardDisplayMode.SHOW) anyItemProgress += eyeOfAyakProgress;
+		if (config.avernicTreadsDisplay() == DelveCalculatorConfig.RewardDisplayMode.SHOW) anyItemProgress += avernicTreadsProgress;
+		if (config.domDisplay() == DelveCalculatorConfig.RewardDisplayMode.SHOW) anyItemProgress += domProgress;
+
+		progress.put("Any Item", anyItemProgress);
 
 		return progress;
 	}
 	private Color calculateProgressColor(int barValue)
 	{
-		if (barValue <= 50)
-		{
-			return new Color(255, (int) (255 * (barValue / 50.0f)), 0);
-		}
-		else
-		{
-			return new Color((int) (255 * (1.0f - (barValue - 50) / 50.0f)), 255, 0);
-		}
+		// Simple red-to-green gradient
+		if (barValue <= 50) return new Color(255, (int) (255 * (barValue / 50.0f)), 0);
+		else return new Color((int) (255 * (1.0f - (barValue - 50) / 50.0f)), 255, 0);
 	}
 	private JPanel createNoDataSection()
 	{

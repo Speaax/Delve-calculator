@@ -169,6 +169,11 @@ public class DelveCalculatorPlugin extends Plugin
 		if (event.getGroup().equals("delvecalculator"))
 		{
 			updatePanelVisibility();
+
+			if (panel != null)
+			{
+				panel.updateAllUI();
+			}
 		}
 	}
 
@@ -178,9 +183,7 @@ public class DelveCalculatorPlugin extends Plugin
 		if (event.getGroupId() == WIDGET_GROUP)
 		{
 			clientThread.invokeLater(this::updateKillCounts);
-			// Always run the main visibility check when the widget opens
 			updatePanelVisibility();
-			// Then, check for the independent auto-open setting
 			if (config.autoOpenOnScoreboard())
 			{
 				togglePanel(true, true);
@@ -193,29 +196,9 @@ public class DelveCalculatorPlugin extends Plugin
 	{
 		if (event.getGroupId() == WIDGET_GROUP)
 		{
-			// When the widget closes, just re-run the main visibility check.
-			// This will correctly hide the panel if no other condition (like Always or Region) keeps it open.
 			updatePanelVisibility();
 		}
 	}
-	/*
-	@Subscribe
-	public void onGameStateChanged(GameStateChanged gameStateChanged)
-	{
-		GameState state = gameStateChanged.getGameState();
-		if (state == GameState.LOGGED_IN)
-		{
-			// This handles the login/re-login scenario to ensure the panel visibility is correct.
-			updatePanelVisibility();
-		}
-		else if (state == GameState.LOADING)
-		{
-			// This handles moving between map regions (teleporting, running).
-			clientThread.invokeLater(this::updatePanelVisibilityForRegion);
-		}
-	}
-
-	 */
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)

@@ -105,6 +105,57 @@ public interface DelveCalculatorConfig extends Config
         return true;
     }
 
+    // --- Reward Display Settings ---
+    @ConfigSection(
+            name = "Reward Display",
+            description = "Configure how each reward is displayed and if it's included in the 'Any' unique calculation.",
+            position = 3,
+            closedByDefault = false
+    )
+    String rewardSettings = "rewardSettings";
+
+    enum RewardDisplayMode
+    {
+        SHOW,  // Displayed normally and included in 'Any' calculation.
+        GREY,  // Displayed but greyed out; NOT included in 'Any' calculation.
+        HIDE   // Not displayed; NOT included in 'Any' calculation.
+    }
+
+    @ConfigItem(
+            keyName = "mokhaiotlClothDisplay",
+            name = "Mokhaiotl's Cloth",
+            description = "How to display the Mokhaiotl's Cloth reward. 'Grey' or 'Hide' will exclude it from the 'Any' unique calculation.",
+            section = rewardSettings,
+            position = 7
+    )
+    default RewardDisplayMode mokhaiotlClothDisplay() { return RewardDisplayMode.SHOW; }
+
+    @ConfigItem(
+            keyName = "eyeOfAyakDisplay",
+            name = "Eye of Ayak",
+            description = "How to display the Eye of Ayak reward. 'Grey' or 'Hide' will exclude it from the 'Any' unique calculation.",
+            section = rewardSettings,
+            position = 8
+    )
+    default RewardDisplayMode eyeOfAyakDisplay() { return RewardDisplayMode.SHOW; }
+
+    @ConfigItem(
+            keyName = "avernicTreadsDisplay",
+            name = "Avernic Treads",
+            description = "How to display the Avernic Treads reward. 'Grey' or 'Hide' will exclude it from the 'Any' unique calculation.",
+            section = rewardSettings,
+            position = 9
+    )
+    default RewardDisplayMode avernicTreadsDisplay() { return RewardDisplayMode.SHOW; }
+
+    @ConfigItem(
+            keyName = "domDisplay",
+            name = "Dom",
+            description = "How to display the D.O.M. reward. 'Grey' or 'Hide' will exclude it from the 'Any' unique calculation.",
+            section = rewardSettings,
+            position = 10
+    )
+    default RewardDisplayMode domDisplay() { return RewardDisplayMode.SHOW; }
 
     // --- Hidden Data ---
     @ConfigItem(
