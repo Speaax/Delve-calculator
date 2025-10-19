@@ -26,9 +26,12 @@ import com.google.inject.Provides;
 import javax.inject.Inject;
 import javax.swing.*;
 import java.awt.image.BufferedImage;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @PluginDescriptor(
@@ -38,40 +41,22 @@ import java.util.Map;
 )
 public class DelveCalculatorPlugin extends Plugin
 {
-	@Inject
-	private Client client;
-
-	@Inject
-	private ClientThread clientThread;
-
-	@Inject
-	private DelveCalculatorConfig config;
-
-	@Inject
-	private Gson gson;
-
-	@Inject
-	private ClientToolbar clientToolbar;
-
-	@Getter
-	@Inject
-	private ItemManager itemManager;
+	@Inject private Client client;
+	@Inject private ClientThread clientThread;
+	@Inject private DelveCalculatorConfig config;
+	@Inject private Gson gson;
+	@Inject private ClientToolbar clientToolbar;
+	@Getter @Inject private ItemManager itemManager;
 
 	private DelveCalculatorPanel panel;
 	private NavigationButton navButton;
+	private Timer sessionTimeoutTimer;
 	private boolean panelVisible = false;
+	private Instant lastRegionEntryTime = null;
 
 	// Widget group ID
 	private static final int WIDGET_GROUP = 920;
-
-
-	private static final int[] DELVE_REGION_IDS = {
-			5269,
-			13668,
-			14180
-	};
-
-	// Drop rate data based on the table you provided
+	private static final int[] DELVE_REGION_IDS = {5269, 13668, 14180};
 	private static final Map<Integer, DropRates> DROP_RATES_BY_LEVEL = new HashMap<>();
 
 	static {
@@ -96,37 +81,31 @@ public class DelveCalculatorPlugin extends Plugin
 	protected void startUp() throws Exception
 	{
 		panel = new DelveCalculatorPanel(this, config, gson);
+		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "/icon.png");
 
-		BufferedImage icon = null;
-		try
-		{
-			icon = ImageUtil.loadImageResource(getClass(), "/icon.png");
-		}
-		catch (Exception e)
-		{
-			log.debug("Failed to load plugin icon", e);
-		}
-		
 		navButton = NavigationButton.builder()
-			.tooltip("Delve Calculator")
-			.icon(icon)
-			.priority(5)
-			.panel(panel)
-			.build();
-		
+				.tooltip("Delve Calculator")
+				.icon(icon)
+				.priority(5)
+				.panel(panel)
+				.build();
+
+		sessionTimeoutTimer = new Timer(0, e -> updatePanelVisibility());
+		sessionTimeoutTimer.setRepeats(false);
+
 		clientToolbar.addNavigation(navButton);
-
 		panelVisible = true;
-
 		updatePanelVisibility();
 	}
 
 	@Override
 	protected void shutDown() throws Exception
 	{
-		clientToolbar.removeNavigation(navButton);
+		sessionTimeoutTimer.stop();
+		SwingUtilities.invokeLater(() -> clientToolbar.removeNavigation(navButton));
 		navButton = null;
 		panel = null;
+		lastRegionEntryTime = null;
 	}
 
 	@Subscribe
@@ -135,7 +114,7 @@ public class DelveCalculatorPlugin extends Plugin
 		if (event.getType() == ChatMessageType.GAMEMESSAGE)
 		{
 			String message = event.getMessage();
-			
+
 			// Check for delve completion messages
 			// Format: "Delve level: 4 duration: 1:45. Personal best: 1:27"
 			// Format: "Delve level: 8+ (11) duration: 1:10.20. Personal best: 1:10.20"
@@ -148,7 +127,7 @@ public class DelveCalculatorPlugin extends Plugin
 					if (parts[i].equals("level:") && i + 1 < parts.length)
 					{
 						String levelText = parts[i + 1];
-						
+
 						// Check if it's level 8+ (special case)
 						if (levelText.equals("8+"))
 						{
@@ -187,7 +166,7 @@ public class DelveCalculatorPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (event.getGroup().equals("delvecalculator") && event.getKey().equals("displayPanel"))
+		if (event.getGroup().equals("delvecalculator"))
 		{
 			updatePanelVisibility();
 		}
@@ -199,9 +178,12 @@ public class DelveCalculatorPlugin extends Plugin
 		if (event.getGroupId() == WIDGET_GROUP)
 		{
 			clientThread.invokeLater(this::updateKillCounts);
-			if (config.displayPanel() == DelveCalculatorConfig.PanelDisplayMode.SCOREBOARD)
+			// Always run the main visibility check when the widget opens
+			updatePanelVisibility();
+			// Then, check for the independent auto-open setting
+			if (config.autoOpenOnScoreboard())
 			{
-				togglePanel(true, config.autoOpenPanel());
+				togglePanel(true, true);
 			}
 		}
 	}
@@ -211,12 +193,12 @@ public class DelveCalculatorPlugin extends Plugin
 	{
 		if (event.getGroupId() == WIDGET_GROUP)
 		{
-			if (config.displayPanel() == DelveCalculatorConfig.PanelDisplayMode.SCOREBOARD)
-			{
-				togglePanel(false, false);
-			}
+			// When the widget closes, just re-run the main visibility check.
+			// This will correctly hide the panel if no other condition (like Always or Region) keeps it open.
+			updatePanelVisibility();
 		}
 	}
+	/*
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
@@ -233,43 +215,146 @@ public class DelveCalculatorPlugin extends Plugin
 		}
 	}
 
-	private void updatePanelVisibilityForRegion()
+	 */
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
-		if (config.displayPanel() == DelveCalculatorConfig.PanelDisplayMode.REGION)
+		if (gameStateChanged.getGameState() == GameState.LOGGED_IN || gameStateChanged.getGameState() == GameState.LOADING)
 		{
-			boolean shouldBeVisible = isInDelveRegion();
-			togglePanel(shouldBeVisible, shouldBeVisible && config.autoOpenPanel());
+			clientThread.invokeLater(() -> {
+				checkRegionAutoOpen();
+				updatePanelVisibility();
+			});
 		}
 	}
 
+	/**
+	 * This method specifically checks if a new region session is starting,
+	 * and if so, triggers the auto-open.
+	 */
+	private void checkRegionAutoOpen()
+	{
+		boolean sessionActive = lastRegionEntryTime != null &&
+				Duration.between(lastRegionEntryTime, Instant.now()).toMinutes() < config.regionTimeout();
+
+		// If we are in the region, but a session wasn't previously active, it's a new session.
+		if (config.showInRegion() && isInDelveRegion() && !sessionActive)
+		{
+			lastRegionEntryTime = Instant.now();
+			togglePanel(true, config.autoOpenInRegion());
+		}
+	}
+
+	/**
+	 * The main logic hub. Determines if the panel icon should be visible based on all config settings.
+	 */
 	private void updatePanelVisibility()
 	{
-		boolean shouldBeVisible;
-		switch (config.displayPanel())
+		sessionTimeoutTimer.stop();
+
+		boolean shouldBeVisible = shouldShowPanel();
+		togglePanel(shouldBeVisible, false); // This check never auto-opens.
+
+		// If a session is active, ensure the timer is running to check for its expiration.
+		if (lastRegionEntryTime != null)
 		{
-			case ALWAYS:
-				shouldBeVisible = true;
-				break;
-			case REGION:
-				shouldBeVisible = isInDelveRegion();
-				break;
-			case SCOREBOARD:
-				shouldBeVisible = isScoreboardVisible();
-				break;
-			default:
-				shouldBeVisible = false;
-				break;
+			long minutesSinceEntry = Duration.between(lastRegionEntryTime, Instant.now()).toMinutes();
+			if (minutesSinceEntry < config.regionTimeout())
+			{
+				long minutesRemaining = config.regionTimeout() - minutesSinceEntry;
+				sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(minutesRemaining));
+				sessionTimeoutTimer.start();
+			}
+			else
+			{
+				// Session has expired, clear the timestamp
+				lastRegionEntryTime = null;
+			}
 		}
-		togglePanel(shouldBeVisible, false); // Don't auto-open on config change/startup
+	}
+
+	/**
+	 * Determines if the panel icon should be visible by checking all configured conditions.
+	 * @return true if any condition for visibility is met.
+	 */
+	private boolean shouldShowPanel()
+	{
+		// Condition 1: "Always Show" is enabled.
+		if (config.alwaysShowPanel())
+		{
+			return true;
+		}
+
+		// Condition 2: "Show in Region" is enabled AND a session is active.
+		boolean sessionActive = lastRegionEntryTime != null &&
+				Duration.between(lastRegionEntryTime, Instant.now()).toMinutes() < config.regionTimeout();
+		if (config.showInRegion() && sessionActive)
+		{
+			return true;
+		}
+
+		// Condition 3: "Show on Scoreboard" is enabled AND the scoreboard is visible.
+		if (config.showOnScoreboard() && isScoreboardVisible())
+		{
+			return true;
+		}
+
+		return false; // No conditions met.
+	}
+
+	/**
+	 * Handles the session-based logic for the REGION display mode.
+	 */
+	private void handleRegionSession()
+	{
+		boolean inRegion = isInDelveRegion();
+		boolean sessionActive = lastRegionEntryTime != null &&
+				Duration.between(lastRegionEntryTime, Instant.now()).toMinutes() < config.regionTimeout();
+
+		if (inRegion)
+		{
+			if (!sessionActive)
+			{
+				lastRegionEntryTime = Instant.now();
+				// Use the specific config for region auto-opening
+				togglePanel(true, config.autoOpenInRegion());
+			}
+			else
+			{
+				togglePanel(true, false);
+			}
+		}
+		else // Not in the region
+		{
+			if (!sessionActive)
+			{
+				lastRegionEntryTime = null;
+				togglePanel(false, false);
+				return;
+			}
+		}
+
+		if (lastRegionEntryTime != null)
+		{
+			long minutesSinceEntry = Duration.between(lastRegionEntryTime, Instant.now()).toMinutes();
+			long minutesRemaining = config.regionTimeout() - minutesSinceEntry;
+
+			if (minutesRemaining > 0)
+			{
+				sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(minutesRemaining));
+				sessionTimeoutTimer.start();
+			}
+			else
+			{
+				updatePanelVisibility(); // Re-run logic if timer is already supposed to be expired
+			}
+		}
 	}
 
 	private boolean isInDelveRegion()
 	{
-		if (client.getGameState() != GameState.LOGGED_IN)
-		{
-			return false;
-		}
-		// Checks if any of the currently loaded map regions are in our list of Delve regions.
+		if (client.getGameState() != GameState.LOGGED_IN) return false;
 		return Arrays.stream(client.getMapRegions()).anyMatch(
 				regionId -> Arrays.stream(DELVE_REGION_IDS).anyMatch(delveId -> delveId == regionId)
 		);
@@ -329,11 +414,11 @@ public class DelveCalculatorPlugin extends Plugin
 			Widget widget = client.getWidget(WIDGET_GROUP, childId);
 
 			log.debug("Reading widget {} for level {}: {}", childId, i + 1, widget != null ? widget.getText() : "null");
-			
+
 			if (widget != null && widget.getText() != null && !widget.getText().isEmpty())
 			{
 				String text = widget.getText().trim();
-				
+
 				try
 				{
 					// Extract just the number from the text
