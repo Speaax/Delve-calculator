@@ -16,7 +16,7 @@ public interface DelveCalculatorConfig extends Config
 
     @ConfigItem(
             keyName = "alwaysShowPanel",
-            name = "Show Everywhere",
+            name = "Show Icon Everywhere",
             description = "Keeps the panel icon visible at all times. If off, it will only appear when specific conditions below are met.",
             section = generalSettings,
             position = 1
@@ -37,7 +37,7 @@ public interface DelveCalculatorConfig extends Config
 
     @ConfigItem(
             keyName = "showInRegion",
-            name = "Show in Region",
+            name = "Show Icon in Region",
             description = "Shows the panel icon when you are inside the Delve region.",
             section = regionSettings,
             position = 2
@@ -61,8 +61,12 @@ public interface DelveCalculatorConfig extends Config
 
     @ConfigItem(
             keyName = "regionTimeout",
-            name = "Region Session Timeout",
-            description = "Session timer in minutes. The icon remains visible during this time, even if you leave to bank.",
+            name = "Hide plugin after",
+            description = "<html>Session timer in minutes. This timer starts once you leave the region." +
+                    "<br>" +
+                    "The icon remains visible during this time while outside the region, nice for banking." +
+                    "<br><br>" +
+                    "If the panel is open when the timer runs out, it will hide once the side panel is closed, and the game loads (running/teleporting etc).</html>",
             section = regionSettings,
             position = 4
     )
@@ -83,7 +87,7 @@ public interface DelveCalculatorConfig extends Config
 
     @ConfigItem(
             keyName = "showOnScoreboard",
-            name = "Show on Scoreboard",
+            name = "Show Icon on Scoreboard",
             description = "Shows the panel icon when the Delve scoreboard is open.",
             section = scoreboardSettings,
             position = 5
