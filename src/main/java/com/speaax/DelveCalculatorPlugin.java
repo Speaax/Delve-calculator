@@ -6,10 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
-import net.runelite.api.events.ChatMessage;
-import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.WidgetClosed;
-import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.events.*;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
@@ -53,6 +50,7 @@ public class DelveCalculatorPlugin extends Plugin
 	private Timer sessionTimeoutTimer;
 	private boolean panelVisible = false;
 	private Instant lastRegionEntryTime = null;
+	private boolean inDelveRegion = false;
 
 	// Widget group ID
 	private static final int WIDGET_GROUP = 920;
@@ -203,30 +201,32 @@ public class DelveCalculatorPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
-		if (gameStateChanged.getGameState() == GameState.LOGGED_IN || gameStateChanged.getGameState() == GameState.LOADING)
+		if (gameStateChanged.getGameState() != GameState.LOGGED_IN)
 		{
-			clientThread.invokeLater(() -> {
-				checkRegionAutoOpen();
-				updatePanelVisibility();
-			});
+			return;
 		}
-	}
 
-	/**
-	 * This method specifically checks if a new region session is starting,
-	 * and if so, triggers the auto-open.
-	 */
-	private void checkRegionAutoOpen()
-	{
-		boolean sessionActive = lastRegionEntryTime != null &&
-				Duration.between(lastRegionEntryTime, Instant.now()).toMinutes() < config.regionTimeout();
+		clientThread.invokeLater(() -> {
+			boolean wasInDelveRegion = inDelveRegion;
+			inDelveRegion = isInDelveRegion();
 
-		// If we are in the region, but a session wasn't previously active, it's a new session.
-		if (config.showInRegion() && isInDelveRegion() && !sessionActive)
-		{
-			lastRegionEntryTime = Instant.now();
-			togglePanel(true, config.autoOpenInRegion());
-		}
+			// Just entered the region
+			if (inDelveRegion && !wasInDelveRegion)
+			{
+				sessionTimeoutTimer.stop();
+				lastRegionEntryTime = Instant.now();
+				togglePanel(true, config.autoOpenInRegion());
+			}
+			// Just left the region
+			else if (!inDelveRegion && wasInDelveRegion)
+			{
+				// Start the timer to hide the panel later
+				sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(config.regionTimeout()));
+				sessionTimeoutTimer.start();
+			}
+
+			updatePanelVisibility();
+		});
 	}
 
 	/**
@@ -234,27 +234,9 @@ public class DelveCalculatorPlugin extends Plugin
 	 */
 	private void updatePanelVisibility()
 	{
-		sessionTimeoutTimer.stop();
-
+		// This method is now just a simple state checker. The timer is handled elsewhere.
 		boolean shouldBeVisible = shouldShowPanel();
 		togglePanel(shouldBeVisible, false); // This check never auto-opens.
-
-		// If a session is active, ensure the timer is running to check for its expiration.
-		if (lastRegionEntryTime != null)
-		{
-			long minutesSinceEntry = Duration.between(lastRegionEntryTime, Instant.now()).toMinutes();
-			if (minutesSinceEntry < config.regionTimeout())
-			{
-				long minutesRemaining = config.regionTimeout() - minutesSinceEntry;
-				sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(minutesRemaining));
-				sessionTimeoutTimer.start();
-			}
-			else
-			{
-				// Session has expired, clear the timestamp
-				lastRegionEntryTime = null;
-			}
-		}
 	}
 
 	/**
@@ -269,16 +251,20 @@ public class DelveCalculatorPlugin extends Plugin
 			return true;
 		}
 
-		// Condition 2: "Show in Region" is enabled AND a session is active.
-		boolean sessionActive = lastRegionEntryTime != null &&
-				Duration.between(lastRegionEntryTime, Instant.now()).toMinutes() < config.regionTimeout();
-		if (config.showInRegion() && sessionActive)
+		// Condition 2: "Show on Scoreboard" is enabled AND the scoreboard is visible.
+		if (config.showOnScoreboard() && isScoreboardVisible())
 		{
 			return true;
 		}
 
-		// Condition 3: "Show on Scoreboard" is enabled AND the scoreboard is visible.
-		if (config.showOnScoreboard() && isScoreboardVisible())
+		// Condition 3: Player is currently in the region.
+		if (config.showInRegion() && inDelveRegion)
+		{
+			return true;
+		}
+
+		// Condition 4: The hide timer is currently running (player has left, but grace period is active).
+		if (config.showInRegion() && sessionTimeoutTimer.isRunning())
 		{
 			return true;
 		}
@@ -367,8 +353,14 @@ public class DelveCalculatorPlugin extends Plugin
 			}
 			else
 			{
-				// This is the key fix: always remove the button if it should be hidden,
-				// regardless of what our boolean thought its state was.
+				// ** THE CRITICAL SAFETY CHECK **
+				// Only remove the button if our panel is not the one currently selected.
+				if (navButton.getPanel().isShowing())
+				{
+					return; // Do nothing, leave the button visible.
+				}
+
+				// If it's safe to hide, proceed with removal.
 				clientToolbar.removeNavigation(navButton);
 				panelVisible = false;
 			}
