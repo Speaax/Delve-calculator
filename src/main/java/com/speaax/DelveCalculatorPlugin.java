@@ -125,15 +125,13 @@ public class DelveCalculatorPlugin extends Plugin
 	@Override
 	protected void shutDown() throws Exception
 	{
+		clientToolbar.removeNavigation(navButton);
+		navButton = null;
+		
 		if (sessionTimeoutTimer != null) {
 			sessionTimeoutTimer.stop();
 		}
-		SwingUtilities.invokeLater(() -> {
-			if (navButton != null) {
-				clientToolbar.removeNavigation(navButton);
-			}
-		});
-		navButton = null;
+
 		panel = null;
 		lastRegionEntryTime = null;
 	}
