@@ -176,4 +176,26 @@ public interface DelveCalculatorConfig extends Config
             description = ""
     )
     void killCountData(String data);
+
+    @ConfigItem(
+            keyName = "activeViewTab",
+            name = "Active View Tab",
+            description = "The last selected view tab.",
+            hidden = true
+    )
+    default String activeViewTab() { return "ALL"; }
+
+    @ConfigItem(keyName = "activeViewTab", name = "", description = "")
+    void activeViewTab(String tab);
+
+    @ConfigItem(
+            keyName = "activeModeTab",
+            name = "Active Mode Tab",
+            description = "The last selected mode tab.",
+            hidden = true
+    )
+    default String activeModeTab() { return "EXPECTED"; }
+
+    @ConfigItem(keyName = "activeModeTab", name = "", description = "")
+    void activeModeTab(String mode);
 }

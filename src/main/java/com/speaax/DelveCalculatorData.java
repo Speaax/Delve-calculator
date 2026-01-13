@@ -1,6 +1,7 @@
 package com.speaax;
 
 import lombok.Data;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -10,6 +11,36 @@ import java.util.Map;
 @Data
 public class DelveCalculatorData
 {
-    private Map<Integer, Integer> levelKills;
-    private int wavesPast8;
+    private Map<String, DelveProfile> profiles = new HashMap<>();
+
+    @Data
+    public static class DelveProfile
+    {
+        private String name;
+        private Map<Integer, Integer> levelKills = new HashMap<>();
+        private int wavesPast8;
+        private Map<Integer, Integer> obtainedUniques = new HashMap<>();
+
+        public DelveProfile() {}
+
+        public DelveProfile(String name, boolean initialize)
+        {
+            this.name = name;
+        }
+
+        public void addKills(int level, int count)
+        {
+            levelKills.merge(level, count, Integer::sum);
+        }
+
+        public void addWave8()
+        {
+            wavesPast8++;
+        }
+
+        public void addDrop(int itemId)
+        {
+            obtainedUniques.merge(itemId, 1, Integer::sum);
+        }
+    }
 }

@@ -6,7 +6,10 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.ScriptID;
+import net.runelite.api.WorldType;
 import net.runelite.api.events.*;
+import net.runelite.api.ItemID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
@@ -18,6 +21,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.util.Text;
 import com.google.inject.Provides;
 
 import javax.inject.Inject;
@@ -26,9 +30,12 @@ import java.awt.image.BufferedImage;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Slf4j
 @PluginDescriptor(
@@ -39,7 +46,7 @@ import java.util.concurrent.TimeUnit;
 public class DelveCalculatorPlugin extends Plugin
 {
 	@Inject private Client client;
-	@Inject private ClientThread clientThread;
+	@Inject @Getter private ClientThread clientThread;
 	@Inject private DelveCalculatorConfig config;
 	@Inject private Gson gson;
 	@Inject private ClientToolbar clientToolbar;
@@ -52,21 +59,40 @@ public class DelveCalculatorPlugin extends Plugin
 	private Instant lastRegionEntryTime = null;
 	private boolean inDelveRegion = false;
 
-	// Widget group ID
-	private static final int WIDGET_GROUP = 920;
+	private final Map<String, DelveCalculatorData.DelveProfile> sessionProfiles = new HashMap<>();
+
+	public DelveCalculatorData.DelveProfile getSessionProfile(String mode)
+	{
+		return sessionProfiles.computeIfAbsent(mode, k -> new DelveCalculatorData.DelveProfile("Session", false));
+	}
+
+	private static final int WIDGET_GROUP_SCOREBOARD = 920;
+	private static final int WIDGET_GROUP_COLLECTION_LOG = 621;
+	private static final int WIDGET_COLLECTION_LOG_ITEMS = 37;
+
+	// Loot Interface Constants
+	private static final int WIDGET_GROUP_LOOT = 919;
+	private static final int WIDGET_LOOT_CLAIM_HEADER = 8;
+	private static final int WIDGET_LOOT_CONTENTS = 19;
+
 	private static final int[] DELVE_REGION_IDS = {5269, 13668, 14180};
 	private static final Map<Integer, DropRates> DROP_RATES_BY_LEVEL = new HashMap<>();
+	private static final Map<String, Integer> UNIQUE_DROPS = new HashMap<>();
 
 	static {
-		//DROP_RATES_BY_LEVEL.put(x... where x is delve level and 9 is everything from 9 and above
-		DROP_RATES_BY_LEVEL.put(2, new DropRates(1.0/2500, 1.0/2500, 0, 0, 0, 0));
-		DROP_RATES_BY_LEVEL.put(3, new DropRates(1.0/1000, 1.0/2000, 1.0/2000, 0, 0, 0));
-		DROP_RATES_BY_LEVEL.put(4, new DropRates(1.0/450, 1.0/1350, 1.0/1350, 1.0/1350, 0, 0));
-		DROP_RATES_BY_LEVEL.put(5, new DropRates(1.0/270, 1.0/810, 1.0/810, 1.0/810, 0, 0));
-		DROP_RATES_BY_LEVEL.put(6, new DropRates(1.0/255, 1.0/765, 1.0/765, 1.0/765, 1.0/1000, 0));
-		DROP_RATES_BY_LEVEL.put(7, new DropRates(1.0/240, 1.0/720, 1.0/720, 1.0/720, 1.0/750, 0));
-		DROP_RATES_BY_LEVEL.put(8, new DropRates(1.0/210, 1.0/630, 1.0/630, 1.0/630, 1.0/500, 0));
-		DROP_RATES_BY_LEVEL.put(9, new DropRates(1.0/180, 1.0/540, 1.0/540, 1.0/540, 1.0/250, 0));
+		DROP_RATES_BY_LEVEL.put(2, new DropRates(1.0/2500, 1.0/2500, 0, 0, 0));
+		DROP_RATES_BY_LEVEL.put(3, new DropRates(1.0/1000, 1.0/2000, 1.0/2000, 0, 0));
+		DROP_RATES_BY_LEVEL.put(4, new DropRates(1.0/450, 1.0/1350, 1.0/1350, 1.0/1350, 0));
+		DROP_RATES_BY_LEVEL.put(5, new DropRates(1.0/270, 1.0/810, 1.0/810, 1.0/810, 0));
+		DROP_RATES_BY_LEVEL.put(6, new DropRates(1.0/255, 1.0/765, 1.0/765, 1.0/765, 1.0/1000));
+		DROP_RATES_BY_LEVEL.put(7, new DropRates(1.0/240, 1.0/720, 1.0/720, 1.0/720, 1.0/750));
+		DROP_RATES_BY_LEVEL.put(8, new DropRates(1.0/210, 1.0/630, 1.0/630, 1.0/630, 1.0/500));
+		DROP_RATES_BY_LEVEL.put(9, new DropRates(1.0/180, 1.0/540, 1.0/540, 1.0/540, 1.0/250));
+
+		UNIQUE_DROPS.put("Mokhaiotl cloth", ItemID.MOKHAIOTL_CLOTH);
+		UNIQUE_DROPS.put("Eye of ayak (uncharged)", ItemID.EYE_OF_AYAK_UNCHARGED);
+		UNIQUE_DROPS.put("Avernic treads", ItemID.AVERNIC_TREADS);
+		UNIQUE_DROPS.put("Dom", ItemID.DOM);
 	}
 
 	@Provides
@@ -99,63 +125,74 @@ public class DelveCalculatorPlugin extends Plugin
 	@Override
 	protected void shutDown() throws Exception
 	{
-		sessionTimeoutTimer.stop();
-		SwingUtilities.invokeLater(() -> clientToolbar.removeNavigation(navButton));
+		if (sessionTimeoutTimer != null) {
+			sessionTimeoutTimer.stop();
+		}
+		SwingUtilities.invokeLater(() -> {
+			if (navButton != null) {
+				clientToolbar.removeNavigation(navButton);
+			}
+		});
 		navButton = null;
 		panel = null;
 		lastRegionEntryTime = null;
 	}
 
+	public String getCurrentGameMode()
+	{
+		if (client == null) return "STANDARD";
+		EnumSet<WorldType> types = client.getWorldType();
+		if (types == null || types.isEmpty()) return "STANDARD";
+
+		// Sort and join all active world types to create a unique future-proof key
+		return types.stream()
+				.map(Enum::name)
+				.sorted()
+				.collect(Collectors.joining("_"));
+	}
+
 	@Subscribe
 	public void onChatMessage(ChatMessage event)
 	{
-		if (event.getType() == ChatMessageType.GAMEMESSAGE)
+		if (event.getType() == ChatMessageType.GAMEMESSAGE || event.getType() == ChatMessageType.SPAM)
 		{
-			String message = event.getMessage();
-
-			// Check for delve completion messages
-			// Format: "Delve level: 4 duration: 1:45. Personal best: 1:27"
-			// Format: "Delve level: 8+ (11) duration: 1:10.20. Personal best: 1:10.20"
+			String message = Text.removeTags(event.getMessage());
 			if (message.contains("Delve level:") && message.contains("duration:"))
 			{
-				// Extract delve level from the message
-				String[] parts = message.split(" ");
-				for (int i = 0; i < parts.length; i++)
-				{
-					if (parts[i].equals("level:") && i + 1 < parts.length)
-					{
-						String levelText = parts[i + 1];
+				handleDelveCompletion(message);
+			}
+		}
+	}
 
-						// Check if it's level 8+ (special case)
-						if (levelText.equals("8+"))
+	private void handleDelveCompletion(String message)
+	{
+		String[] parts = message.split(" ");
+		for (int i = 0; i < parts.length; i++)
+		{
+			if (parts[i].equals("level:") && i + 1 < parts.length)
+			{
+				String levelText = parts[i + 1];
+				String gameMode = getCurrentGameMode();
+				if (levelText.equals("8+"))
+				{
+					if (panel != null) panel.incrementWavesPast8(gameMode);
+					break;
+				}
+				else
+				{
+					try
+					{
+						int level = Integer.parseInt(levelText);
+						if (level >= 1 && level <= 8)
 						{
-							log.debug("Delve completed! Level: 8+");
-							panel.incrementWavesPast8();
+						if (level >= 1 && level <= 8)
+						{
+							if (panel != null) panel.incrementFloorKills(gameMode, level);
 							break;
 						}
-						else
-						{
-							// Regular level (1-8)
-							try
-							{
-								int level = Integer.parseInt(levelText);
-								if (level >= 1 && level <= 8)
-								{
-									log.debug("Delve completed! Level: {}", level);
-									panel.incrementFloorKills(level);
-									break;
-								}
-								else
-								{
-									log.debug("Invalid delve level: {}", level);
-								}
-							}
-							catch (NumberFormatException e)
-							{
-								log.debug("Failed to parse delve level from message: {}", message);
-							}
 						}
 					}
+					catch (NumberFormatException ignored) {}
 				}
 			}
 		}
@@ -167,158 +204,112 @@ public class DelveCalculatorPlugin extends Plugin
 		if (event.getGroup().equals("delvecalculator"))
 		{
 			updatePanelVisibility();
-
-			if (panel != null)
-			{
-				panel.updateAllUI();
-			}
+			if (panel != null) panel.updateAllUI();
 		}
 	}
 
 	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded event)
 	{
-		if (event.getGroupId() == WIDGET_GROUP)
+		if (event.getGroupId() == WIDGET_GROUP_SCOREBOARD)
 		{
 			clientThread.invokeLater(this::updateKillCounts);
 			updatePanelVisibility();
-			if (config.autoOpenOnScoreboard())
-			{
-				togglePanel(true, true);
-			}
+			if (config.autoOpenOnScoreboard()) togglePanel(true, true);
+		}
+		if (event.getGroupId() == WIDGET_GROUP_LOOT)
+		{
+			clientThread.invokeLater(this::scanLootInterface);
 		}
 	}
 
 	@Subscribe
 	public void onWidgetClosed(WidgetClosed event)
 	{
-		if (event.getGroupId() == WIDGET_GROUP)
+		if (event.getGroupId() == WIDGET_GROUP_SCOREBOARD) updatePanelVisibility();
+	}
+
+	@Subscribe
+	public void onScriptPostFired(ScriptPostFired event)
+	{
+		// COLLECTION_LOG_SEND_CATEGORY (1212) or COLLECTION_DRAW_LIST
+		if (event.getScriptId() == 1212 || event.getScriptId() == ScriptID.COLLECTION_DRAW_LIST)
 		{
-			updatePanelVisibility();
+			clientThread.invokeLater(this::syncCollectionLog);
+		}
+	}
+
+
+	private void syncCollectionLog()
+	{
+		Widget itemsContainer = client.getWidget(WIDGET_GROUP_COLLECTION_LOG, WIDGET_COLLECTION_LOG_ITEMS);
+		if (itemsContainer == null || itemsContainer.isHidden()) return;
+
+		Widget[] children = itemsContainer.getChildren();
+		if (children == null) return;
+
+		Map<Integer, Integer> foundDrops = new HashMap<>();
+		boolean isDelvePage = false;
+		for (Widget child : children)
+		{
+			int itemId = child.getItemId();
+			int quantity = child.getItemQuantity();
+			if (child.getOpacity() > 0) quantity = 0;
+
+			String name = itemManager.getItemComposition(itemId).getName();
+			if (name == null) continue;
+
+			for (Map.Entry<String, Integer> entry : UNIQUE_DROPS.entrySet()) {
+				if (entry.getKey().equalsIgnoreCase(name)) {
+					isDelvePage = true;
+					foundDrops.put(entry.getValue(), quantity);
+				}
+			}
+		}
+		if (isDelvePage && panel != null)
+		{
+			panel.syncCollectionLogData(getCurrentGameMode(), foundDrops);
 		}
 	}
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
-		if (gameStateChanged.getGameState() != GameState.LOGGED_IN)
-		{
-			return;
-		}
-
+		if (gameStateChanged.getGameState() != GameState.LOGGED_IN) return;
 		clientThread.invokeLater(() -> {
 			boolean wasInDelveRegion = inDelveRegion;
 			inDelveRegion = isInDelveRegion();
-
-			// Just entered the region
+			if (panel != null) panel.switchGameMode(getCurrentGameMode());
 			if (inDelveRegion && !wasInDelveRegion)
 			{
-				sessionTimeoutTimer.stop();
+				if (sessionTimeoutTimer != null) sessionTimeoutTimer.stop();
 				lastRegionEntryTime = Instant.now();
 				togglePanel(true, config.autoOpenInRegion());
 			}
-			// Just left the region
 			else if (!inDelveRegion && wasInDelveRegion)
 			{
-				// Start the timer to hide the panel later
-				sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(config.regionTimeout()));
-				sessionTimeoutTimer.start();
+				if (sessionTimeoutTimer != null) {
+					sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(config.regionTimeout()));
+					sessionTimeoutTimer.start();
+				}
 			}
-
 			updatePanelVisibility();
 		});
 	}
 
-	/**
-	 * The main logic hub. Determines if the panel icon should be visible based on all config settings.
-	 */
 	private void updatePanelVisibility()
 	{
-		// This method is now just a simple state checker. The timer is handled elsewhere.
 		boolean shouldBeVisible = shouldShowPanel();
-		togglePanel(shouldBeVisible, false); // This check never auto-opens.
+		togglePanel(shouldBeVisible, false);
 	}
 
-	/**
-	 * Determines if the panel icon should be visible by checking all configured conditions.
-	 * @return true if any condition for visibility is met.
-	 */
 	private boolean shouldShowPanel()
 	{
-		// Condition 1: "Always Show" is enabled.
-		if (config.alwaysShowPanel())
-		{
-			return true;
-		}
-
-		// Condition 2: "Show on Scoreboard" is enabled AND the scoreboard is visible.
-		if (config.showOnScoreboard() && isScoreboardVisible())
-		{
-			return true;
-		}
-
-		// Condition 3: Player is currently in the region.
-		if (config.showInRegion() && inDelveRegion)
-		{
-			return true;
-		}
-
-		// Condition 4: The hide timer is currently running (player has left, but grace period is active).
-		if (config.showInRegion() && sessionTimeoutTimer.isRunning())
-		{
-			return true;
-		}
-
-		return false; // No conditions met.
-	}
-
-	/**
-	 * Handles the session-based logic for the REGION display mode.
-	 */
-	private void handleRegionSession()
-	{
-		boolean inRegion = isInDelveRegion();
-		boolean sessionActive = lastRegionEntryTime != null &&
-				Duration.between(lastRegionEntryTime, Instant.now()).toMinutes() < config.regionTimeout();
-
-		if (inRegion)
-		{
-			if (!sessionActive)
-			{
-				lastRegionEntryTime = Instant.now();
-				// Use the specific config for region auto-opening
-				togglePanel(true, config.autoOpenInRegion());
-			}
-			else
-			{
-				togglePanel(true, false);
-			}
-		}
-		else // Not in the region
-		{
-			if (!sessionActive)
-			{
-				lastRegionEntryTime = null;
-				togglePanel(false, false);
-				return;
-			}
-		}
-
-		if (lastRegionEntryTime != null)
-		{
-			long minutesSinceEntry = Duration.between(lastRegionEntryTime, Instant.now()).toMinutes();
-			long minutesRemaining = config.regionTimeout() - minutesSinceEntry;
-
-			if (minutesRemaining > 0)
-			{
-				sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(minutesRemaining));
-				sessionTimeoutTimer.start();
-			}
-			else
-			{
-				updatePanelVisibility(); // Re-run logic if timer is already supposed to be expired
-			}
-		}
+		if (config.alwaysShowPanel()) return true;
+		if (config.showOnScoreboard() && isScoreboardVisible()) return true;
+		if (config.showInRegion() && inDelveRegion) return true;
+		if (config.showInRegion() && sessionTimeoutTimer != null && sessionTimeoutTimer.isRunning()) return true;
+		return false;
 	}
 
 	private boolean isInDelveRegion()
@@ -331,7 +322,7 @@ public class DelveCalculatorPlugin extends Plugin
 
 	private boolean isScoreboardVisible()
 	{
-		Widget scoreboardWidget = client.getWidget(WIDGET_GROUP, 0);
+		Widget scoreboardWidget = client.getWidget(WIDGET_GROUP_SCOREBOARD, 0);
 		return scoreboardWidget != null && !scoreboardWidget.isHidden();
 	}
 
@@ -340,140 +331,97 @@ public class DelveCalculatorPlugin extends Plugin
 		SwingUtilities.invokeLater(() -> {
 			if (show)
 			{
+				if (navButton == null) return;
 				if (!panelVisible)
 				{
 					clientToolbar.addNavigation(navButton);
 					panelVisible = true;
 				}
-
 				if (autoOpen)
 				{
-					SwingUtilities.invokeLater(() -> clientToolbar.openPanel(navButton));
+					clientToolbar.openPanel(navButton);
 				}
 			}
 			else
 			{
-				// ** THE CRITICAL SAFETY CHECK **
-				// Only remove the button if our panel is not the one currently selected.
-				if (navButton.getPanel().isShowing())
-				{
-					return; // Do nothing, leave the button visible.
-				}
-
-				// If it's safe to hide, proceed with removal.
+				if (navButton == null) return;
+				if (navButton.getPanel() != null && navButton.getPanel().isShowing()) return;
 				clientToolbar.removeNavigation(navButton);
 				panelVisible = false;
 			}
 		});
 	}
 
-
-	// Static method to get drop rates for external access
 	public static Map<Integer, DropRates> getDropRates()
 	{
 		return DROP_RATES_BY_LEVEL;
+	}
+
+	public static Map<String, Integer> getUniqueDropsMap()
+	{
+		return UNIQUE_DROPS;
 	}
 
 	private void updateKillCounts()
 	{
 		Map<Integer, Integer> levelKills = new HashMap<>();
 		int wavesPast8 = 0;
-
-		log.debug("Starting updateKillCounts - reading from widget group {}", WIDGET_GROUP);
-
-		// Simple approach: read from child ID 46 to 70 with 3 increments
-		// This covers Level 1 (46) through Level 8+ (70)
-		for (int i = 0; i < 9; i++) // 9 levels: 1-8 + 8+
+		for (int i = 0; i < 9; i++)
 		{
 			int childId = 46 + (i * 3);
-			Widget widget = client.getWidget(WIDGET_GROUP, childId);
-
-			log.debug("Reading widget {} for level {}: {}", childId, i + 1, widget != null ? widget.getText() : "null");
-
+			Widget widget = client.getWidget(WIDGET_GROUP_SCOREBOARD, childId);
 			if (widget != null && widget.getText() != null && !widget.getText().isEmpty())
 			{
 				String text = widget.getText().trim();
-
 				try
 				{
-					// Extract just the number from the text
 					String numberText = text.replaceAll("[^0-9]", "");
 					if (!numberText.isEmpty())
 					{
 						int kills = Integer.parseInt(numberText);
-						if (i == 8)
-						{
-							// This is Level 8+
-							wavesPast8 = kills;
-							log.debug("Level 8+ (waves past 8): {}", kills);
-						}
-						else
-						{
-							// This is a regular level (1-8)
-							levelKills.put(i + 1, kills);
-							log.debug("Level {}: {}", i + 1, kills);
-						}
-					}
-					else
-					{
-						// No numeric data found
-						if (i == 8)
-						{
-							wavesPast8 = 0;
-							log.debug("Level 8+ (waves past 8): 0 (no numeric data)");
-						}
-						else
-						{
-							levelKills.put(i + 1, 0);
-							log.debug("Level {}: 0 (no numeric data)", i + 1);
-						}
+						if (i == 8) wavesPast8 = kills;
+						else levelKills.put(i + 1, kills);
 					}
 				}
-				catch (NumberFormatException e)
-				{
-					if (i == 8)
-					{
-						wavesPast8 = 0;
-						log.debug("Level 8+ (waves past 8): 0 (parse error)");
-					}
-					else
-					{
-						levelKills.put(i + 1, 0);
-						log.debug("Level {}: 0 (parse error)", i + 1);
-					}
-				}
-			}
-			else
-			{
-				if (i == 8)
-				{
-					wavesPast8 = 0;
-					log.debug("Level 8+ (waves past 8): 0 (widget null/empty)");
-				}
-				else
-				{
-					levelKills.put(i + 1, 0);
-					log.debug("Level {}: 0 (widget null/empty)", i + 1);
-				}
+				catch (NumberFormatException ignored) {}
 			}
 		}
-
-		log.debug("Final levelKills map: {}", levelKills);
-		log.debug("Final wavesPast8: {}", wavesPast8);
-
-		// Update the panel with new data
 		if (panel != null)
 		{
-			log.debug("Calling panel.updateData with {} levels and {} waves past 8", levelKills.size(), wavesPast8);
-			panel.updateData(levelKills, wavesPast8);
-		}
-		else
-		{
-			log.debug("Panel is null, cannot update data");
+			panel.syncOverallData(getCurrentGameMode(), levelKills, wavesPast8);
 		}
 	}
 
-	// Helper class to store drop rates for each level
+	private void scanLootInterface()
+	{
+		Widget lootInterface = client.getWidget(WIDGET_GROUP_LOOT, WIDGET_LOOT_CONTENTS);
+		Widget claimHeader = client.getWidget(WIDGET_GROUP_LOOT, WIDGET_LOOT_CLAIM_HEADER);
+		if (lootInterface == null || lootInterface.isHidden() || claimHeader == null || claimHeader.isHidden()) return;
+
+		Widget[] children = lootInterface.getChildren();
+		if (children == null) return;
+
+		for (Widget item : children)
+		{
+			int itemId = item.getItemId();
+			if (itemId <= -1) continue;
+			String name = itemManager.getItemComposition(itemId).getName();
+			if (name == null) continue;
+			for (Map.Entry<String, Integer> entry : UNIQUE_DROPS.entrySet())
+			{
+				if (entry.getKey().equalsIgnoreCase(name))
+				{
+					handleDropLogic(getCurrentGameMode(), entry.getValue());
+				}
+			}
+		}
+	}
+
+	private void handleDropLogic(String gameMode, int itemId)
+	{
+		if (panel != null) panel.recordDrop(gameMode, itemId);
+	}
+
 	public static class DropRates
 	{
 		public final double overallChance;
@@ -481,16 +429,14 @@ public class DelveCalculatorPlugin extends Plugin
 		public final double eyeOfAyak;
 		public final double avernicTreads;
 		public final double dom;
-		public final double cumulativeChance;
 
-		public DropRates(double overall, double mokhaiotl, double eye, double avernic, double dom, double cumulative)
+		public DropRates(double overall, double mokhaiotl, double eye, double avernic, double dom)
 		{
 			this.overallChance = overall;
 			this.mokhaiotlCloth = mokhaiotl;
 			this.eyeOfAyak = eye;
 			this.avernicTreads = avernic;
 			this.dom = dom;
-			this.cumulativeChance = cumulative;
 		}
 	}
 }
