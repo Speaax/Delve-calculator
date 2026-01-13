@@ -128,13 +128,16 @@ public class DelveCalculatorPlugin extends Plugin
 		if (sessionTimeoutTimer != null) {
 			sessionTimeoutTimer.stop();
 		}
-		SwingUtilities.invokeLater(() -> {
-			if (navButton != null) {
-				clientToolbar.removeNavigation(navButton);
-			}
-		});
-		navButton = null;
-		panel = null;
+		
+		if (navButton != null) {
+			clientToolbar.removeNavigation(navButton);
+			navButton = null;
+		}
+		
+		if (panel != null) {
+			panel = null;
+		}
+		
 		lastRegionEntryTime = null;
 	}
 
