@@ -160,6 +160,20 @@ public class DelveCalculatorPlugin extends Plugin
 				handleDelveCompletion(message);
 			}
 		}
+		
+		if (event.getType() == ChatMessageType.GAMEMESSAGE)
+		{
+			String message = event.getMessage();
+			if (message.equals("You have a funny feeling like you're being followed.") ||
+				message.equals("You feel something weird sneaking into your backpack.") ||
+				message.equals("You have a funny feeling like you would have been followed..."))
+			{
+				if (isInDelveRegion())
+				{
+					handleDropLogic(getCurrentGameMode(), ItemID.DOM);
+				}
+			}
+		}
 	}
 
 	private void handleDelveCompletion(String message)
@@ -409,6 +423,7 @@ public class DelveCalculatorPlugin extends Plugin
 			{
 				if (entry.getKey().equalsIgnoreCase(name))
 				{
+					if (name.equalsIgnoreCase("Dom")) continue;
 					handleDropLogic(getCurrentGameMode(), entry.getValue());
 				}
 			}
