@@ -11,6 +11,8 @@ import net.runelite.api.WorldType;
 import net.runelite.api.events.*;
 import net.runelite.api.ItemID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.Player;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -27,12 +29,9 @@ import com.google.inject.Provides;
 import javax.inject.Inject;
 import javax.swing.*;
 import java.awt.image.BufferedImage;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -56,7 +55,6 @@ public class DelveCalculatorPlugin extends Plugin
 	private NavigationButton navButton;
 	private Timer sessionTimeoutTimer;
 	private boolean panelVisible = false;
-	private Instant lastRegionEntryTime = null;
 	private boolean inDelveRegion = false;
 
 	private final Map<String, DelveCalculatorData.DelveProfile> sessionProfiles = new HashMap<>();
@@ -137,7 +135,6 @@ public class DelveCalculatorPlugin extends Plugin
 		if (panel != null) {
 			panel = null;
 		}
-		lastRegionEntryTime = null;
 	}
 
 	public String getCurrentGameMode()
@@ -201,11 +198,8 @@ public class DelveCalculatorPlugin extends Plugin
 						int level = Integer.parseInt(levelText);
 						if (level >= 1 && level <= 8)
 						{
-						if (level >= 1 && level <= 8)
-						{
 							if (panel != null) panel.incrementFloorKills(gameMode, level);
 							break;
-						}
 						}
 					}
 					catch (NumberFormatException ignored) {}
@@ -219,6 +213,22 @@ public class DelveCalculatorPlugin extends Plugin
 	{
 		if (event.getGroup().equals("delvecalculator"))
 		{
+			if ("showInRegion".equals(event.getKey()) || "autoOpenInRegion".equals(event.getKey()))
+			{
+				clientThread.invokeLater(() -> {
+					inDelveRegion = (config.onlyShowInRegion() || config.autoOpenInRegion()) && isInDelveRegion();
+					updatePanelVisibility();
+				});
+			}
+
+			if ("regionTimeout".equals(event.getKey()))
+			{
+				if (sessionTimeoutTimer != null && sessionTimeoutTimer.isRunning())
+				{
+					sessionTimeoutTimer.setInitialDelay((int) TimeUnit.MINUTES.toMillis(config.regionTimeout()));
+					sessionTimeoutTimer.restart();
+				}
+			}
 			updatePanelVisibility();
 			if (panel != null) panel.updateAllUI();
 		}
@@ -230,19 +240,12 @@ public class DelveCalculatorPlugin extends Plugin
 		if (event.getGroupId() == WIDGET_GROUP_SCOREBOARD)
 		{
 			clientThread.invokeLater(this::updateKillCounts);
-			updatePanelVisibility();
 			if (config.autoOpenOnScoreboard()) togglePanel(true, true);
 		}
 		if (event.getGroupId() == WIDGET_GROUP_LOOT)
 		{
 			clientThread.invokeLater(this::scanLootInterface);
 		}
-	}
-
-	@Subscribe
-	public void onWidgetClosed(WidgetClosed event)
-	{
-		if (event.getGroupId() == WIDGET_GROUP_SCOREBOARD) updatePanelVisibility();
 	}
 
 	@Subscribe
@@ -279,6 +282,7 @@ public class DelveCalculatorPlugin extends Plugin
 				if (entry.getKey().equalsIgnoreCase(name)) {
 					isDelvePage = true;
 					foundDrops.put(entry.getValue(), quantity);
+					break;
 				}
 			}
 		}
@@ -293,13 +297,22 @@ public class DelveCalculatorPlugin extends Plugin
 	{
 		if (gameStateChanged.getGameState() != GameState.LOGGED_IN) return;
 		clientThread.invokeLater(() -> {
+			// Always update game mode for score tracking
+			if (panel != null) panel.switchGameMode(getCurrentGameMode());
+
+			// Skip region tracking entirely if the configs are disabled
+			if (!config.onlyShowInRegion() && !config.autoOpenInRegion())
+			{
+				inDelveRegion = false;
+				return;
+			}
+
 			boolean wasInDelveRegion = inDelveRegion;
 			inDelveRegion = isInDelveRegion();
-			if (panel != null) panel.switchGameMode(getCurrentGameMode());
+
 			if (inDelveRegion && !wasInDelveRegion)
 			{
 				if (sessionTimeoutTimer != null) sessionTimeoutTimer.stop();
-				lastRegionEntryTime = Instant.now();
 				togglePanel(true, config.autoOpenInRegion());
 			}
 			else if (!inDelveRegion && wasInDelveRegion)
@@ -309,6 +322,7 @@ public class DelveCalculatorPlugin extends Plugin
 					sessionTimeoutTimer.start();
 				}
 			}
+
 			updatePanelVisibility();
 		});
 	}
@@ -321,19 +335,31 @@ public class DelveCalculatorPlugin extends Plugin
 
 	private boolean shouldShowPanel()
 	{
-		if (config.alwaysShowPanel()) return true;
-		if (config.showOnScoreboard() && isScoreboardVisible()) return true;
-		if (config.showInRegion() && inDelveRegion) return true;
-		if (config.showInRegion() && sessionTimeoutTimer != null && sessionTimeoutTimer.isRunning()) return true;
+		if (config.autoOpenOnScoreboard() && isScoreboardVisible()) return true;
+		if (!config.onlyShowInRegion()) return true;
+		if (inDelveRegion) return true;
+		if (sessionTimeoutTimer != null && sessionTimeoutTimer.isRunning()) return true;
 		return false;
 	}
 
 	private boolean isInDelveRegion()
 	{
 		if (client.getGameState() != GameState.LOGGED_IN) return false;
-		return Arrays.stream(client.getMapRegions()).anyMatch(
-				regionId -> Arrays.stream(DELVE_REGION_IDS).anyMatch(delveId -> delveId == regionId)
-		);
+
+		Player localPlayer = client.getLocalPlayer();
+		if (localPlayer == null) return false;
+
+		WorldPoint wp = WorldPoint.fromLocalInstance(client, localPlayer.getLocalLocation());
+		if (wp == null) wp = localPlayer.getWorldLocation();
+		if (wp == null) return false;
+
+		int playerRegion = wp.getRegionID();
+		for (int delveId : DELVE_REGION_IDS)
+		{
+			if (playerRegion == delveId) return true;
+		}
+
+		return false;
 	}
 
 	private boolean isScoreboardVisible()
@@ -342,20 +368,33 @@ public class DelveCalculatorPlugin extends Plugin
 		return scoreboardWidget != null && !scoreboardWidget.isHidden();
 	}
 
+
+
 	private void togglePanel(boolean show, boolean autoOpen)
 	{
 		SwingUtilities.invokeLater(() -> {
 			if (show)
 			{
 				if (navButton == null) return;
+				boolean newlyAdded = false;
 				if (!panelVisible)
 				{
 					clientToolbar.addNavigation(navButton);
 					panelVisible = true;
+					newlyAdded = true;
 				}
 				if (autoOpen)
 				{
-					clientToolbar.openPanel(navButton);
+					if (newlyAdded)
+					{
+						Timer timer = new Timer(200, e -> clientToolbar.openPanel(navButton));
+						timer.setRepeats(false);
+						timer.start();
+					}
+					else
+					{
+						clientToolbar.openPanel(navButton);
+					}
 				}
 			}
 			else
@@ -427,8 +466,11 @@ public class DelveCalculatorPlugin extends Plugin
 			{
 				if (entry.getKey().equalsIgnoreCase(name))
 				{
-					if (name.equalsIgnoreCase("Dom")) continue;
-					handleDropLogic(getCurrentGameMode(), entry.getValue());
+					if (!name.equalsIgnoreCase("Dom"))
+					{
+						handleDropLogic(getCurrentGameMode(), entry.getValue());
+					}
+					break;
 				}
 			}
 		}

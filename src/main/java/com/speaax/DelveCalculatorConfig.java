@@ -5,44 +5,26 @@ import net.runelite.client.config.*;
 @ConfigGroup("delvecalculator")
 public interface DelveCalculatorConfig extends Config
 {
-    // --- General Settings ---
+
+
+
+    // --- Panel Settings ---
     @ConfigSection(
-            name = "General",
-            description = "General panel visibility settings",
+            name = "Panel Settings",
+            description = "Configure when the panel should appear.",
             position = 0,
             closedByDefault = false
     )
-    String generalSettings = "generalSettings";
-
-    @ConfigItem(
-            keyName = "alwaysShowPanel",
-            name = "Show Icon Everywhere",
-            description = "Keeps the panel icon visible at all times. If off, it will only appear when specific conditions below are met.",
-            section = generalSettings,
-            position = 1
-    )
-    default boolean alwaysShowPanel()
-    {
-        return true;
-    }
-
-
-    // --- Region Settings ---
-    @ConfigSection(
-            name = "Region Settings",
-            description = "Make the panel appear when you are in the Delve region.",
-            position = 1
-    )
-    String regionSettings = "regionSettings";
+    String panelSettings = "panelSettings";
 
     @ConfigItem(
             keyName = "showInRegion",
-            name = "Show Icon in Region",
-            description = "Shows the panel icon when you are inside the Delve region.",
-            section = regionSettings,
-            position = 2
+            name = "Only show panel in region",
+            description = "When enabled, the panel only appears when you are in the Delve region.",
+            section = panelSettings,
+            position = 1
     )
-    default boolean showInRegion()
+    default boolean onlyShowInRegion()
     {
         return false;
     }
@@ -51,7 +33,7 @@ public interface DelveCalculatorConfig extends Config
             keyName = "autoOpenInRegion",
             name = "Auto Open in Region",
             description = "Automatically open the panel when a new Region session begins.",
-            section = regionSettings,
+            section = panelSettings,
             position = 3
     )
     default boolean autoOpenInRegion()
@@ -64,10 +46,12 @@ public interface DelveCalculatorConfig extends Config
             name = "Hide plugin after",
             description = "<html>Session timer in minutes. This timer starts once you leave the region." +
                     "<br>" +
-                    "The icon remains visible during this time while outside the region, nice for banking." +
+                    "The panel remains visible during this time while outside the region, nice for banking." +
                     "<br><br>" +
-                    "If the panel is open when the timer runs out, it will hide once the side panel is closed, and the game loads (running/teleporting etc).</html>",
-            section = regionSettings,
+                    "If the panel is open when the timer runs out, it will hide once the side panel is closed, and the game loads (running/teleporting etc).</html>"+
+                    "<br><br>" +
+                    "This timer is only used when 'Only show panel in region' is enabled.",
+            section = panelSettings,
             position = 4
     )
     @Units(Units.MINUTES)
@@ -77,31 +61,13 @@ public interface DelveCalculatorConfig extends Config
     }
 
 
-    // --- Scoreboard Settings ---
-    @ConfigSection(
-            name = "Scoreboard Settings",
-            description = "Make the panel appear when the Delve scoreboard is open.",
-            position = 2
-    )
-    String scoreboardSettings = "scoreboardSettings";
 
-    @ConfigItem(
-            keyName = "showOnScoreboard",
-            name = "Show Icon on Scoreboard",
-            description = "Shows the panel icon when the Delve scoreboard is open.",
-            section = scoreboardSettings,
-            position = 5
-    )
-    default boolean showOnScoreboard()
-    {
-        return false;
-    }
 
     @ConfigItem(
             keyName = "autoOpenOnScoreboard",
             name = "Auto Open on Scoreboard",
             description = "Automatically open the panel when you open the Delve scoreboard.",
-            section = scoreboardSettings,
+            section = panelSettings,
             position = 6
     )
     default boolean autoOpenOnScoreboard()

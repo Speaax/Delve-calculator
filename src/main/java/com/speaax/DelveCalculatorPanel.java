@@ -577,7 +577,19 @@ public class DelveCalculatorPanel extends PluginPanel
 
 	private int getActualDrops(DelveCalculatorData.DelveProfile profile, String itemName)
 	{
-		if (itemName.equals("Any Item")) return profile.getObtainedUniques().values().stream().mapToInt(Integer::intValue).sum();
+		if (itemName.equals("Any Item"))
+		{
+			int sum = 0;
+			Map<String, DelveCalculatorConfig.RewardDisplayMode> displayModes = getDisplayModes();
+			for (Map.Entry<String, Integer> entry : DelveCalculatorPlugin.getUniqueDropsMap().entrySet())
+			{
+				if (displayModes.getOrDefault(entry.getKey(), DelveCalculatorConfig.RewardDisplayMode.SHOW) == DelveCalculatorConfig.RewardDisplayMode.SHOW)
+				{
+					sum += profile.getObtainedUniques().getOrDefault(entry.getValue(), 0);
+				}
+			}
+			return sum;
+		}
 		Integer itemId = DelveCalculatorPlugin.getUniqueDropsMap().get(itemName);
 		return (itemId != null) ? profile.getObtainedUniques().getOrDefault(itemId, 0) : 0;
 	}
