@@ -164,7 +164,7 @@ public class DelveCalculatorPlugin extends Plugin
 		
 		if (event.getType() == ChatMessageType.GAMEMESSAGE)
 		{
-			String message = event.getMessage();
+			String message = Text.removeTags(event.getMessage());
 			if (message.equals("You have a funny feeling like you're being followed.") ||
 				message.equals("You feel something weird sneaking into your backpack.") ||
 				message.equals("You have a funny feeling like you would have been followed..."))
