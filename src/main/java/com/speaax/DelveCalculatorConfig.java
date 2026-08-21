@@ -144,6 +144,54 @@ public interface DelveCalculatorConfig extends Config
     void killCountData(String data);
 
     @ConfigItem(
+            keyName = "legacyBackupData",
+            name = "",
+            description = "",
+            hidden = true
+    )
+    default String legacyBackupData() { return ""; }
+
+    @ConfigItem(
+            keyName = "legacyBackupData",
+            name = "",
+            description = ""
+    )
+    void legacyBackupData(String data);
+
+    @ConfigItem(
+            keyName = "needsSyncNotice",
+            name = "",
+            description = "",
+            hidden = true
+    )
+    default boolean needsSyncNotice() { return false; }
+
+    @ConfigItem(keyName = "needsSyncNotice", name = "", description = "")
+    void needsSyncNotice(boolean needsSync);
+
+    @ConfigItem(
+            keyName = "scoreboardSynced",
+            name = "",
+            description = "",
+            hidden = true
+    )
+    default boolean scoreboardSynced() { return false; }
+
+    @ConfigItem(keyName = "scoreboardSynced", name = "", description = "")
+    void scoreboardSynced(boolean synced);
+
+    @ConfigItem(
+            keyName = "collectionLogSynced",
+            name = "",
+            description = "",
+            hidden = true
+    )
+    default boolean collectionLogSynced() { return false; }
+
+    @ConfigItem(keyName = "collectionLogSynced", name = "", description = "")
+    void collectionLogSynced(boolean synced);
+
+    @ConfigItem(
             keyName = "activeViewTab",
             name = "Active View Tab",
             description = "The last selected view tab.",

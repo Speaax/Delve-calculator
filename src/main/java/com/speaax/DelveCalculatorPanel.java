@@ -38,6 +38,7 @@ public class DelveCalculatorPanel extends PluginPanel
 	private final JLabel totalKillsLabel;
 	private final JPanel progressPanel;
 	private final JPanel noDataSectionPanel;
+	private JLabel noDataLabel;
 	private final MaterialTabGroup viewTabGroup = new MaterialTabGroup();
 	private final MaterialTabGroup modeTabGroup = new MaterialTabGroup();
 
@@ -371,7 +372,21 @@ public class DelveCalculatorPanel extends PluginPanel
 		if (json == null || json.isEmpty()) return;
 		try {
 			this.data = gson.fromJson(json, DelveCalculatorData.class);
-			if (this.data == null) this.data = new DelveCalculatorData();
+			if (this.data == null)
+			{
+				this.data = new DelveCalculatorData();
+			}
+			else if (this.data.migrateLegacyProfiles())
+			{
+				if (config.legacyBackupData() == null || config.legacyBackupData().isEmpty())
+				{
+					config.legacyBackupData(json);
+				}
+				config.needsSyncNotice(true);
+				config.scoreboardSynced(false);
+				config.collectionLogSynced(false);
+				saveData();
+			}
 		} catch (Exception e) { log.debug("Error loading data", e); }
 	}
 
@@ -432,6 +447,16 @@ public class DelveCalculatorPanel extends PluginPanel
 		profile.getLevelKills().putAll(levelKills);
 		profile.setWavesPast8(wavesPast8);
 		saveData();
+
+		if (config.needsSyncNotice())
+		{
+			config.scoreboardSynced(true);
+			if (config.collectionLogSynced())
+			{
+				config.needsSyncNotice(false);
+			}
+		}
+
 		SwingUtilities.invokeLater(this::updateAllUI);
 	}
 
@@ -440,6 +465,16 @@ public class DelveCalculatorPanel extends PluginPanel
 		DelveCalculatorData.DelveProfile profile = data.getProfiles().computeIfAbsent(mode, k -> new DelveCalculatorData.DelveProfile(mode, true));
 		profile.getObtainedUniques().putAll(foundDrops);
 		saveData();
+
+		if (config.needsSyncNotice())
+		{
+			config.collectionLogSynced(true);
+			if (config.scoreboardSynced())
+			{
+				config.needsSyncNotice(false);
+			}
+		}
+
 		SwingUtilities.invokeLater(this::updateAllUI);
 	}
 
@@ -463,7 +498,48 @@ public class DelveCalculatorPanel extends PluginPanel
 
 		boolean hasData = totalKills > 0;
 		manualResetPanel.setVisible(currentView == ViewTab.MANUAL);
-		noDataSectionPanel.setVisible(!hasData && currentView == ViewTab.ALL);
+
+		if (currentView == ViewTab.ALL)
+		{
+			if (config.needsSyncNotice())
+			{
+				boolean sb = config.scoreboardSynced();
+				boolean clog = config.collectionLogSynced();
+				if (!sb && !clog)
+				{
+					noDataLabel.setText("<html><center><font color='yellow'>Data updated in recent patch.</font><br>Check Collection Log &amp; Scoreboard to sync.</center></html>");
+				}
+				else if (!sb)
+				{
+					noDataLabel.setText("<html><center><font color='yellow'>Data updated in recent patch.</font><br>Read Delve Scoreboard to sync.</center></html>");
+				}
+				else if (!clog)
+				{
+					noDataLabel.setText("<html><center><font color='yellow'>Data updated in recent patch.</font><br>Open Collection Log to sync.</center></html>");
+				}
+				noDataSectionPanel.setVisible(true);
+			}
+			else if (!hasData)
+			{
+				noDataLabel.setText("<html><center>No data.<br>Read scoreboard outside bossroom.</center></html>");
+				noDataSectionPanel.setVisible(true);
+			}
+			else
+			{
+				noDataSectionPanel.setVisible(false);
+			}
+		}
+		else
+		{
+			noDataSectionPanel.setVisible(false);
+		}
+	}
+
+	public int getTotalCompletions(String mode)
+	{
+		DelveCalculatorData.DelveProfile profile = data.getProfiles().get(mode);
+		if (profile == null) return 0;
+		return profile.getLevelKills().values().stream().mapToInt(Integer::intValue).sum() + profile.getWavesPast8();
 	}
 
 	private DelveCalculatorData.DelveProfile getActiveProfile()
@@ -793,9 +869,10 @@ public class DelveCalculatorPanel extends PluginPanel
 		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
 		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(new EmptyBorder(10, 10, 10, 10));
-		JLabel noDataLabel = new JLabel("No data, read scoreboard outside the bossroom");
+		noDataLabel = new JLabel("<html><center>No data. Open coll log<br>Read scoreboard outside bossroom.</center></html>");
 		noDataLabel.setForeground(Color.ORANGE);
 		noDataLabel.setFont(FontManager.getRunescapeFont());
+		noDataLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		noDataLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 		panel.add(noDataLabel);
 		panel.setVisible(false);

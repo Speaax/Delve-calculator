@@ -56,6 +56,7 @@ public class DelveCalculatorPlugin extends Plugin
 	private Timer sessionTimeoutTimer;
 	private boolean panelVisible = false;
 	private boolean inDelveRegion = false;
+	private int lastRecordedLootCompletions = -1;
 
 	private final Map<String, DelveCalculatorData.DelveProfile> sessionProfiles = new HashMap<>();
 
@@ -135,6 +136,8 @@ public class DelveCalculatorPlugin extends Plugin
 		if (panel != null) {
 			panel = null;
 		}
+
+		lastRecordedLootCompletions = -1;
 	}
 
 	public String getCurrentGameMode()
@@ -143,11 +146,13 @@ public class DelveCalculatorPlugin extends Plugin
 		EnumSet<WorldType> types = client.getWorldType();
 		if (types == null || types.isEmpty()) return "STANDARD";
 
-		// Sort and join all active world types to create a unique future-proof key
-		return types.stream()
-				.map(Enum::name)
-				.sorted()
-				.collect(Collectors.joining("_"));
+		if (types.contains(WorldType.SEASONAL)) return "SEASONAL";
+		if (types.contains(WorldType.DEADMAN)) return "DEADMAN";
+		if (types.contains(WorldType.QUEST_SPEEDRUNNING)) return "QUEST_SPEEDRUNNING";
+		if (types.contains(WorldType.TOURNAMENT_WORLD) || types.contains(WorldType.NOSAVE_MODE)) return "BETA";
+		if (types.contains(WorldType.FRESH_START_WORLD)) return "FRESH_START_WORLD";
+
+		return "STANDARD";
 	}
 
 	@Subscribe
@@ -453,9 +458,18 @@ public class DelveCalculatorPlugin extends Plugin
 		Widget claimHeader = client.getWidget(WIDGET_GROUP_LOOT, WIDGET_LOOT_CLAIM_HEADER);
 		if (lootInterface == null || lootInterface.isHidden() || claimHeader == null || claimHeader.isHidden()) return;
 
+		String gameMode = getCurrentGameMode();
+		int currentCompletions = panel != null ? panel.getTotalCompletions(gameMode) : 0;
+
+		if (lastRecordedLootCompletions != -1 && currentCompletions == lastRecordedLootCompletions)
+		{
+			return;
+		}
+
 		Widget[] children = lootInterface.getChildren();
 		if (children == null) return;
 
+		boolean foundUnique = false;
 		for (Widget item : children)
 		{
 			int itemId = item.getItemId();
@@ -468,11 +482,17 @@ public class DelveCalculatorPlugin extends Plugin
 				{
 					if (!name.equalsIgnoreCase("Dom"))
 					{
-						handleDropLogic(getCurrentGameMode(), entry.getValue());
+						handleDropLogic(gameMode, entry.getValue());
+						foundUnique = true;
 					}
 					break;
 				}
 			}
+		}
+
+		if (foundUnique)
+		{
+			lastRecordedLootCompletions = currentCompletions;
 		}
 	}
 
